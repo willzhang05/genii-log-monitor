@@ -1,4 +1,5 @@
 extern crate chrono;
+extern crate tokio;
 
 use std::env;
 use std::thread;
@@ -10,6 +11,8 @@ use std::sync::mpsc::channel;
 use std::time::Duration;
 use chrono::prelude::*;
 
+use tokio::prelude::Future;
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -19,7 +22,7 @@ fn main() {
             //let mut watcher = watcher(Duration::from_secs(1)).expect("Failed to create watcher.");
             //watcher.watch(&args[2]).expect("Failed to watch file.");
 
-            let (tx, rx) = channel();
+            /*let (tx, rx) = channel();
 
 
             let reader = thread::spawn(move || {
@@ -41,6 +44,14 @@ fn main() {
 
             reader.join().expect("The sender thread has panicked!");
             notifier.join().expect("the receiver thread has panicked!");
+            */
+            let task = tokio::fs::read(args[2].clone()).map(|data| {
+                println!("{:?}", String::from_utf8_lossy(&data));
+            }).map_err(|e| {
+                eprintln!("IO error: {:?}", e);
+            });
+            tokio::run(task);
+
         } else if &args[1] == "test" {
             let mut buffer = File::create(&args[2]).expect("Unable to create file.");
             loop {

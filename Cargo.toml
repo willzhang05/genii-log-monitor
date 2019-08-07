@@ -6,3 +6,4 @@ edition = "2018"
 
 [dependencies]
 chrono = "0.4"
+tokio = "0.1.22"
