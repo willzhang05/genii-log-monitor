@@ -11,7 +11,7 @@ use std::sync::mpsc::channel;
 use std::time::Duration;
 use chrono::prelude::*;
 
-use tokio::prelude::Future;
+use tokio::prelude::{AsyncRead, Future};
 
 
 fn main() {
@@ -45,12 +45,29 @@ fn main() {
             reader.join().expect("The sender thread has panicked!");
             notifier.join().expect("the receiver thread has panicked!");
             */
-            let task = tokio::fs::read(args[2].clone()).map(|data| {
-                println!("{:?}", String::from_utf8_lossy(&data));
+
+            /*let task = tokio::fs::File::open(args[2].clone()).and_then(|mut file| {
+                let mut contents = vec![];
+                file.read_buf(&mut contents).map(|res| {
+                    println!("{:?}", res);
+                })
             }).map_err(|e| {
                 eprintln!("IO error: {:?}", e);
             });
             tokio::run(task);
+            */
+
+            let file = File::open(&args[2]).expect("Unable to open file.");
+            let mut f = BufReader::new(file);
+            let mut temp =  String::new();
+            loop {
+                temp.clear();
+                let line_len = f.read_line(&mut temp).expect("Unable to read line.");
+                f.consume(line_len);
+                if temp.len() != 0 {
+                    println!("{}", temp);
+                }
+            }
 
         } else if &args[1] == "test" {
             let mut buffer = File::create(&args[2]).expect("Unable to create file.");
