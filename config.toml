@@ -1,0 +1,6 @@
+[[containers]]
+alias = "HMF"
+name = "Houston Main Floor"
+install_dir = "/localtmp/luser/HMF"
+log_file = ".GenesisII/container.log"
+properties_file = "production.container.log4j.properties"
