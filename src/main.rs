@@ -1,3 +1,5 @@
+// William Zhang
+
 extern crate toml;
 extern crate chrono;
 extern crate lettre;
@@ -53,8 +55,7 @@ fn read_log_properties(prop_path: &Path) -> (PathBuf, usize) {
             let split_line: Vec<&str> = line_str.split("=").to_owned().collect();
             let mut max_log_size_string = split_line[1].to_string().clone();
             max_log_size_string.truncate(max_log_size_string.len() - 2);
-            //println!("{:?}", max_log_size_string);
-            let max_log_size = max_log_size_string.parse::<usize>().expect("Unable to parse maximum log size");
+            max_log_size = max_log_size_string.parse::<usize>().expect("Unable to parse maximum log size");
         }
     }
     return (log_path, max_log_size);
@@ -78,19 +79,24 @@ fn main() {
                     let (tx, rx) = mpsc::channel();
 
                     let reader = thread::spawn(move || {
-                        //let log_path = Path::new(&container.install_dir).join(&container.log_file);
-                        //println!("{:?}", log_path);
-                        let mut file = fs::File::open(&log_path).expect("Unable to open log file.");
-                        file.seek(SeekFrom::End(0)).expect("Unable to seek to end of log file.");
-                        let mut f = BufReader::new(file);
+                        let mut log_file = fs::File::open(&log_path).expect("Unable to open log file.");
+                        log_file.seek(SeekFrom::End(0)).expect("Unable to seek to end of log file.");
+                        let mut log_reader = BufReader::new(log_file);
                         let mut contents =  String::new();
 
                         println!("Ready and monitoring {}.", log_path.to_str().unwrap());
 
                         loop {
+                            log_reader.get_mut().sync_all().expect("Unable to sync log file.");
+                            let metadata = log_reader.get_ref().metadata().expect("Unable to fetch log file metadata.");
+                            let log_size: f32 = metadata.len() as f32 / 1e6 as f32;
+                            // Untested, meant to handle log rollover when maximum log size is reached.
+                            if log_size >= max_log_size as f32 {
+                                log_reader.get_mut().seek(SeekFrom::Start(0)).expect("Unable to seek to start of log file.");
+                            }
                             contents.clear();
-                            let line_len = f.read_line(&mut contents).expect("Unable to read line.");
-                            f.consume(line_len);
+                            let line_len = log_reader.read_line(&mut contents).expect("Unable to read line.");
+                            log_reader.consume(line_len);
                             
                             if contents.len() != 0 {
                                 let log_line: Vec<&str> = contents.split_whitespace().collect();
