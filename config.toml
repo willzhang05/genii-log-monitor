@@ -3,4 +3,5 @@ alias = "HMF"
 name = "Houston Main Floor"
 install_dir = "/localtmp/luser/HMF"
 properties_file = "production.container.log4j.properties"
+email_notify = ["william.zhang@lancium.com"]
 enabled = true

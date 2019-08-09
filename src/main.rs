@@ -1,5 +1,6 @@
 extern crate toml;
 extern crate chrono;
+extern crate lettre;
 
 use std::string::String;
 use std::path::{Path, PathBuf};
@@ -13,11 +14,15 @@ use std::sync::mpsc;
 use std::time::Duration;
 use chrono::prelude::*;
 
+//use lettre::email::EmailBuilder;
+//use lettre::transport::EmailTransport;
+
 #[derive(serde::Deserialize)]
 struct Container {
     name: String,
     install_dir: String,
     properties_file: String,
+    email_notify: Vec<String>,
     enabled: bool
 }
 
@@ -29,7 +34,7 @@ struct Config {
 fn read_log_properties(prop_path: &Path) -> (PathBuf, usize) {
     let prop_file = fs::File::open(prop_path).expect("Unable to open properties file.");
 
-    let mut prop_reader = BufReader::new(prop_file);
+    let prop_reader = BufReader::new(prop_file);
     let prop_contents = String::new();
     let mut log_path = PathBuf::new();
     let mut max_log_size: usize = 0;
@@ -45,7 +50,11 @@ fn read_log_properties(prop_path: &Path) -> (PathBuf, usize) {
         }
         if line_str.contains("log4j.appender.LOGFILE.MaxFileSize") {
             let split_line: Vec<&str> = line_str.split("=").to_owned().collect();
-            max_log_size = split_line[1].clone().parse::<usize>().unwrap();
+            let mut max_log_size_string = split_line[1].to_string().clone();
+            max_log_size_string.truncate(max_log_size_string.len() - 2);
+            //println!("{:?}", max_log_size_string);
+            let max_log_size = max_log_size_string.parse::<usize>().expect("Unable to parse maximum log size");
+
         }
     }
     return (log_path, max_log_size);
@@ -70,15 +79,21 @@ fn main() {
 
                     let reader = thread::spawn(move || {
                         //let log_path = Path::new(&container.install_dir).join(&container.log_file);
-                        println!("{:?}", log_path);
+                        //println!("{:?}", log_path);
                         let file = fs::File::open(&log_path).expect("Unable to open log file.");
                         let mut f = BufReader::new(file);
                         let mut contents =  String::new();
+                        let mut end_reached = false;
+                        //println!("Ready and monitoring {:?}.", log_path);
                         loop {
                             contents.clear();
                             let line_len = f.read_line(&mut contents).expect("Unable to read line.");
+                            if line_len == 0 {
+                                end_reached = true;
+
+                            }
                             f.consume(line_len);
-                            if contents.len() != 0 {
+                            if contents.len() != 0 && end_reached {
                                 tx.send(contents.to_owned()).expect("Unable to send on channel.");
                             }
                         }
