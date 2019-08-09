@@ -9,6 +9,7 @@ use std::thread;
 use std::fs;
 use std::io::BufReader;
 use std::io::prelude::*;
+use std::io::SeekFrom;
 use std::sync::mpsc;
 
 use std::time::Duration;
@@ -54,7 +55,6 @@ fn read_log_properties(prop_path: &Path) -> (PathBuf, usize) {
             max_log_size_string.truncate(max_log_size_string.len() - 2);
             //println!("{:?}", max_log_size_string);
             let max_log_size = max_log_size_string.parse::<usize>().expect("Unable to parse maximum log size");
-
         }
     }
     return (log_path, max_log_size);
@@ -80,21 +80,23 @@ fn main() {
                     let reader = thread::spawn(move || {
                         //let log_path = Path::new(&container.install_dir).join(&container.log_file);
                         //println!("{:?}", log_path);
-                        let file = fs::File::open(&log_path).expect("Unable to open log file.");
+                        let mut file = fs::File::open(&log_path).expect("Unable to open log file.");
+                        file.seek(SeekFrom::End(0)).expect("Unable to seek to end of log file.");
                         let mut f = BufReader::new(file);
                         let mut contents =  String::new();
-                        let mut end_reached = false;
-                        //println!("Ready and monitoring {:?}.", log_path);
+
+                        println!("Ready and monitoring {}.", log_path.to_str().unwrap());
+
                         loop {
                             contents.clear();
                             let line_len = f.read_line(&mut contents).expect("Unable to read line.");
-                            if line_len == 0 {
-                                end_reached = true;
-
-                            }
                             f.consume(line_len);
-                            if contents.len() != 0 && end_reached {
-                                tx.send(contents.to_owned()).expect("Unable to send on channel.");
+                            
+                            if contents.len() != 0 {
+                                let log_line: Vec<&str> = contents.split_whitespace().collect();
+                                if log_line.len() > 2 && log_line[2] == "ERROR" {
+                                    tx.send(contents.to_owned()).expect("Unable to send on channel.");
+                                }
                             }
                         }
                     });
