@@ -2,6 +2,7 @@
 
 extern crate toml;
 extern crate chrono;
+extern crate lru;
 extern crate lettre;
 
 use std::string::String;
@@ -17,6 +18,8 @@ use std::sync::mpsc;
 use std::time::Duration;
 use chrono::prelude::*;
 
+use lru::LruCache;
+
 //use lettre::email::EmailBuilder;
 //use lettre::transport::EmailTransport;
 
@@ -26,6 +29,7 @@ struct Container {
     install_dir: String,
     properties_file: String,
     email_notify: Vec<String>,
+    cache_size: usize,
     enabled: bool
 }
 
@@ -84,6 +88,8 @@ fn main() {
                         let mut log_reader = BufReader::new(log_file);
                         let mut contents =  String::new();
 
+                        let mut error_cache: LruCache<String, chrono::NaiveDateTime> = LruCache::new(container.cache_size);
+
                         println!("Ready and monitoring {}.", log_path.to_str().unwrap());
 
                         loop {
@@ -99,8 +105,17 @@ fn main() {
                             log_reader.consume(line_len);
                             
                             if contents.len() != 0 {
-                                let log_line: Vec<&str> = contents.split_whitespace().collect();
-                                if log_line.len() > 2 && log_line[2] == "ERROR" {
+                                let log_split: Vec<&str> = contents.split_whitespace().collect();
+                                if log_split.len() > 3 {
+                                    let date_split: Vec<&str> = contents.split(".").collect();
+                                    let error_date = NaiveDateTime::parse_from_str(date_split[0], "%Y-%m-%d %H:%M:%S").expect("Invalid date format in log.");
+                                    let error_msg = log_split[3..].join(" ");
+                                    //println!("{:?}", error_msg);
+                                    if error_cache.contains(&error_msg) {
+                                        println!("{:?} {:?}", error_msg, error_cache.get(&error_msg).unwrap());
+                                    }
+                                    error_cache.put(error_msg, error_date);
+
                                     tx.send(contents.to_owned()).expect("Unable to send on channel.");
                                 }
                             }
@@ -110,7 +125,7 @@ fn main() {
                     let notifier = thread::spawn(move || {
                         loop {
                             let value = rx.recv().expect("Unable to receive from channel.");
-                            println!("{}", value);
+                            //println!("{}", value);
                         }
                     });
 
