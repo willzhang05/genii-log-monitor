@@ -106,7 +106,7 @@ fn main() {
                             
                             if contents.len() != 0 {
                                 let log_split: Vec<&str> = contents.split_whitespace().collect();
-                                if log_split.len() > 3 {
+                                if log_split.len() > 3 && (log_split[2] == "ERROR" || log_split[2] == "WARN") {
                                     let date_split: Vec<&str> = contents.split(".").collect();
                                     let error_date = NaiveDateTime::parse_from_str(date_split[0], "%Y-%m-%d %H:%M:%S").expect("Invalid date format in log.");
                                     let error_msg = log_split[3..].join(" ");
