@@ -13,9 +13,11 @@ use std::fs;
 use std::io::BufReader;
 use std::io::prelude::*;
 use std::io::SeekFrom;
-use std::sync::mpsc;
+//use std::sync::mpsc;
+use std::sync;
 
-use std::time::Duration;
+//use std::time::Duration;
+use std::time;
 use chrono::prelude::*;
 
 use lru::LruCache;
@@ -80,7 +82,7 @@ fn main() {
                     let prop_path = Path::new(&container.install_dir).join(&container.properties_file);
                     let (log_path, max_log_size) = read_log_properties(&prop_path);
 
-                    let (tx, rx) = mpsc::channel();
+                    let (tx, rx) = sync::mpsc::channel();
 
                     let reader = thread::spawn(move || {
                         let mut log_file = fs::File::open(&log_path).expect("Unable to open log file.");
@@ -91,6 +93,8 @@ fn main() {
                         let mut error_cache: LruCache<String, chrono::NaiveDateTime> = LruCache::new(container.cache_size);
 
                         println!("Ready and monitoring {}.", log_path.to_str().unwrap());
+                        
+                        //let now = time::Instant::now();
 
                         loop {
                             log_reader.get_mut().sync_all().expect("Unable to sync log file.");
@@ -141,7 +145,7 @@ fn main() {
                 let local_time = local.to_string() + "\n";
                 buffer.write(&local_time.as_bytes()).expect("Unable to write data.");
                 println!("{:?}", local);
-                thread::sleep(Duration::from_millis(1000));
+                thread::sleep(time::Duration::from_millis(1000));
             }
         }
     } else {
