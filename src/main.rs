@@ -13,8 +13,7 @@ use std::fs;
 use std::io::BufReader;
 use std::io::prelude::*;
 use std::io::SeekFrom;
-//use std::sync::mpsc;
-use std::sync;
+use std::sync::{mpsc, Arc, Mutex};
 
 //use std::time::Duration;
 use std::time;
@@ -67,6 +66,12 @@ fn read_log_properties(prop_path: &Path) -> (PathBuf, usize) {
     return (log_path, max_log_size);
 }
 
+fn monitor_log() {
+}
+
+fn send_notification() {
+}
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -82,7 +87,9 @@ fn main() {
                     let prop_path = Path::new(&container.install_dir).join(&container.properties_file);
                     let (log_path, max_log_size) = read_log_properties(&prop_path);
 
-                    let (tx, rx) = sync::mpsc::channel();
+                    let (tx, rx) = mpsc::channel();
+
+                    let mut error_cache: Arc<Mutex<LruCache<String, chrono::NaiveDateTime>>> = Arc::new(Mutex::new(LruCache::new(container.cache_size)));
 
                     let reader = thread::spawn(move || {
                         let mut log_file = fs::File::open(&log_path).expect("Unable to open log file.");
@@ -90,7 +97,6 @@ fn main() {
                         let mut log_reader = BufReader::new(log_file);
                         let mut contents =  String::new();
 
-                        let mut error_cache: LruCache<String, chrono::NaiveDateTime> = LruCache::new(container.cache_size);
 
                         println!("Ready and monitoring {}.", log_path.to_str().unwrap());
                         
@@ -115,10 +121,11 @@ fn main() {
                                     let error_date = NaiveDateTime::parse_from_str(date_split[0], "%Y-%m-%d %H:%M:%S").expect("Invalid date format in log.");
                                     let error_msg = log_split[3..].join(" ");
                                     //println!("{:?}", error_msg);
-                                    if error_cache.contains(&error_msg) {
-                                        println!("{:?} {:?}", error_msg, error_cache.get(&error_msg).unwrap());
+                                    let mut error_cache_lock = error_cache.lock().unwrap();
+                                    if error_cache_lock.contains(&error_msg) {
+                                        println!("{:?} {:?}", error_msg, (&mut error_cache_lock).get(&error_msg).unwrap());
                                     }
-                                    error_cache.put(error_msg, error_date);
+                                    (&mut error_cache_lock).put(error_msg, error_date);
 
                                     tx.send(contents.to_owned()).expect("Unable to send on channel.");
                                 }
