@@ -96,19 +96,15 @@ fn main() {
 
                     let (tx, rx) = mpsc::channel();
 
-                    let mut error_cache: Arc<Mutex<LruCache<String, ErrorInfo>>> = Arc::new(Mutex::new(LruCache::new(container.cache_size)));
+                    let error_cache: Arc<Mutex<LruCache<String, ErrorInfo>>> = Arc::new(Mutex::new(LruCache::new(container.cache_size)));
 
-                    let reader = thread::spawn({ let mut error_cache = error_cache.clone(); move || {
+                    let reader = thread::spawn({ let error_cache = error_cache.clone(); move || {
                         let mut log_file = fs::File::open(&log_path).expect("Unable to open log file.");
                         log_file.seek(SeekFrom::End(0)).expect("Unable to seek to end of log file.");
                         let mut log_reader = BufReader::new(log_file);
                         let mut contents =  String::new();
 
-
                         println!("Ready and monitoring {}.", log_path.to_str().unwrap());
-                        
-
-
 
                         loop {
                             log_reader.get_mut().sync_all().expect("Unable to sync log file.");
@@ -120,16 +116,15 @@ fn main() {
                             }
                             contents.clear();
                             let line_len = log_reader.read_line(&mut contents).expect("Unable to read line.");
-                            log_reader.consume(line_len);
                             
                             if contents.len() != 0 {
                                 let log_split: Vec<&str> = contents.split_whitespace().collect();
                                 if log_split.len() > 3 && (log_split[2] == "DEBUG" || log_split[2] == "ERROR" || log_split[2] == "WARN") {
-                                    let date_split: Vec<&str> = contents.split(".").collect();
-                                    println!("[READER] {:?}", date_split[0]);
-                                    let error_date = NaiveDateTime::parse_from_str(date_split[0], "%Y-%m-%d %H:%M:%S").expect("Invalid date format in log.");
+                                    let log_date = log_split[..2].join(" ");
+
+                                    let error_date = NaiveDateTime::parse_from_str(log_date.as_str(), "%Y-%m-%d %H:%M:%S%.3f").expect("Invalid date format in log.");
                                     let error_msg = log_split[3..].join(" ");
-                                    //println!("{:?}", error_msg);
+
                                     let mut error_cache_lock = error_cache.lock().unwrap();
                                     println!("[READER]  {:?}", (&error_cache_lock).len());
                                     if error_cache_lock.contains(&error_msg) {
@@ -158,7 +153,7 @@ fn main() {
 
                     let now = time::Instant::now();
 
-                    let notifier = thread::spawn({ let mut error_cache = error_cache.clone(); move || {
+                    let notifier = thread::spawn({ let error_cache = error_cache.clone(); move || {
 
                         loop {
                             let value = rx.recv().expect("Unable to receive from channel.");
