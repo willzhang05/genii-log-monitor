@@ -11,8 +11,7 @@ use std::{env, fs, thread};
 use std::io::{BufReader, SeekFrom, prelude::*};
 use std::sync::{mpsc, Arc, Mutex};
 
-use std::time::Duration;
-use chrono::prelude::*;
+use chrono::{Duration, prelude::*};
 
 use lru::LruCache;
 
@@ -25,6 +24,7 @@ struct Container {
     install_dir: String,
     properties_file: String,
     email_notify: Vec<String>,
+    notify_interval: i64,
     cache_size: usize,
     enabled: bool
 }
@@ -118,19 +118,19 @@ fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, tx: &mpsc:
     }
 }
 
-fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc::Receiver<String>, email_list: &Vec<String>) {
-    //let now = time::Instant::now();
+fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc::Receiver<String>, email_list: &Vec<String>, notify_interval: chrono::Duration) {
+    let start_time = Utc::now().naive_local();
     loop {
         let value = rx.recv().expect("Unable to receive from channel.");
         println!("{}", value);
-        //if now.elapsed().as_secs() >= 60 {
+        let current_time = Utc::now().naive_local();
+        if current_time.signed_duration_since(start_time) > notify_interval {
             let mut error_cache_lock = error_cache.lock().unwrap();
             println!("[NOTIFIER]  {:?}", (&error_cache_lock).len());
             if error_cache_lock.contains(&value) {
                 println!("[NOTIFIER] {:?} {:?}", value, (&mut error_cache_lock).get(&value).unwrap());
             }
-        //}
-
+        }
     }
 }
 
@@ -145,36 +145,27 @@ fn main() {
 
             for container in config_info.containers {
                 if container.enabled {
-                    println!("Ready and started monitoring container {:?}.", &container.name);
+                    println!("{:?} container monitoring enabled.", &container.name);
 
                     let prop_path = Path::new(&container.install_dir).join(&container.properties_file);
                     let (log_path, max_log_size) = read_log_properties(&prop_path);
 
                     let (tx, rx) = mpsc::channel();
-
                     let error_cache: Arc<Mutex<LruCache<String, ErrorInfo>>> = Arc::new(Mutex::new(LruCache::new(container.cache_size)));
 
                     let reader = thread::spawn({ let error_cache = error_cache.clone(); move || {
                         monitor_log(&error_cache, &tx, &log_path, max_log_size);
                     }});
 
+                    let notify_interval = Duration::minutes(container.notify_interval);
+
                     let notifier = thread::spawn({ let error_cache = error_cache.clone(); move || {
-                        notify_error(&error_cache, &rx, &container.email_notify);
+                        notify_error(&error_cache, &rx, &container.email_notify, notify_interval);
                     }});
 
                     reader.join().expect("The sender thread has panicked!");
                     notifier.join().expect("the receiver thread has panicked!");
                 }
-            }
-
-        } else if &args[1] == "test" {
-            let mut buffer = fs::File::create(&args[2]).expect("Unable to create file.");
-            loop {
-                let local: DateTime<Local> = Local::now();
-                let local_time = local.to_string() + "\n";
-                buffer.write(&local_time.as_bytes()).expect("Unable to write data.");
-                println!("{:?}", local);
-                thread::sleep(Duration::from_millis(1000));
             }
         }
     } else {
