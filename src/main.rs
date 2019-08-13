@@ -39,6 +39,13 @@ struct Config {
     containers: Vec<Container>
 }
 
+#[derive(Copy, Clone, Debug)]
+struct ErrorInfo {
+    last_update: chrono::NaiveDateTime,
+    update_period: i64,
+    email_sent: bool
+}
+
 fn read_log_properties(prop_path: &Path) -> (PathBuf, usize) {
     let prop_file = fs::File::open(prop_path).expect("Unable to open properties file.");
 
@@ -89,9 +96,9 @@ fn main() {
 
                     let (tx, rx) = mpsc::channel();
 
-                    let mut error_cache: Arc<Mutex<LruCache<String, chrono::NaiveDateTime>>> = Arc::new(Mutex::new(LruCache::new(container.cache_size)));
+                    let mut error_cache: Arc<Mutex<LruCache<String, ErrorInfo>>> = Arc::new(Mutex::new(LruCache::new(container.cache_size)));
 
-                    let reader = thread::spawn(move || {
+                    let reader = thread::spawn({ let mut error_cache = error_cache.clone(); move || {
                         let mut log_file = fs::File::open(&log_path).expect("Unable to open log file.");
                         log_file.seek(SeekFrom::End(0)).expect("Unable to seek to end of log file.");
                         let mut log_reader = BufReader::new(log_file);
@@ -100,7 +107,8 @@ fn main() {
 
                         println!("Ready and monitoring {}.", log_path.to_str().unwrap());
                         
-                        //let now = time::Instant::now();
+
+
 
                         loop {
                             log_reader.get_mut().sync_all().expect("Unable to sync log file.");
@@ -116,29 +124,55 @@ fn main() {
                             
                             if contents.len() != 0 {
                                 let log_split: Vec<&str> = contents.split_whitespace().collect();
-                                if log_split.len() > 3 && (log_split[2] == "ERROR" || log_split[2] == "WARN") {
+                                if log_split.len() > 3 && (log_split[2] == "DEBUG" || log_split[2] == "ERROR" || log_split[2] == "WARN") {
                                     let date_split: Vec<&str> = contents.split(".").collect();
+                                    println!("[READER] {:?}", date_split[0]);
                                     let error_date = NaiveDateTime::parse_from_str(date_split[0], "%Y-%m-%d %H:%M:%S").expect("Invalid date format in log.");
                                     let error_msg = log_split[3..].join(" ");
                                     //println!("{:?}", error_msg);
                                     let mut error_cache_lock = error_cache.lock().unwrap();
+                                    println!("[READER]  {:?}", (&error_cache_lock).len());
                                     if error_cache_lock.contains(&error_msg) {
-                                        println!("{:?} {:?}", error_msg, (&mut error_cache_lock).get(&error_msg).unwrap());
+                                        let mut error_info = (&mut error_cache_lock).get_mut(&error_msg).unwrap();
+                                        
+                                        let current_time = Utc::now().naive_local();
+
+                                        let error_period = current_time.signed_duration_since(error_info.last_update).num_seconds();
+                                        error_info.last_update = current_time;
+                                        error_info.update_period = error_period;
+
+                                        //(&mut error_cache_lock).put(error_msg, error_info);
+                                        println!("[READER] {:?} {:?} Updated!", error_msg, (&mut error_cache_lock).get(&error_msg).unwrap());
+                                    } else {
+                                        let error_info: ErrorInfo = ErrorInfo { last_update: error_date, update_period: 0, email_sent: false };
+                                        println!("[READER] {:?} {:?} Inserted!", error_msg, error_info);
+                                        (&mut error_cache_lock).put(error_msg, error_info);
                                     }
-                                    (&mut error_cache_lock).put(error_msg, error_date);
 
                                     tx.send(contents.to_owned()).expect("Unable to send on channel.");
                                 }
                             }
                         }
-                    });
+                    }});
+                    
 
-                    let notifier = thread::spawn(move || {
+                    let now = time::Instant::now();
+
+                    let notifier = thread::spawn({ let mut error_cache = error_cache.clone(); move || {
+
                         loop {
                             let value = rx.recv().expect("Unable to receive from channel.");
+                            //if now.elapsed().as_secs() >= 60 {
+                                let mut error_cache_lock = error_cache.lock().unwrap();
+                                println!("[NOTIFIER]  {:?}", (&error_cache_lock).len());
+                                if error_cache_lock.contains(&value) {
+                                    println!("[NOTIFIER] {:?} {:?}", value, (&mut error_cache_lock).get(&value).unwrap());
+                                }
+                            //}
+
                             //println!("{}", value);
                         }
-                    });
+                    }});
 
                     reader.join().expect("The sender thread has panicked!");
                     notifier.join().expect("the receiver thread has panicked!");
