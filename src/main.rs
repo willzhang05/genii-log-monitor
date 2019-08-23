@@ -64,7 +64,7 @@ fn read_log_properties(prop_path: &Path) -> (PathBuf, usize) {
             let split_line: Vec<&str> = line_str.split("=").to_owned().collect();
             let mut max_log_size_string = split_line[1].to_string().clone();
             max_log_size_string.truncate(max_log_size_string.len() - 2);
-            max_log_size = max_log_size_string.parse::<usize>().expect("Unable to parse maximum log size");
+            max_log_size = max_log_size_string.parse::<usize>().expect("Unable to parse max log size");
         }
     }
     return (log_path, max_log_size);
@@ -131,9 +131,7 @@ fn send_email(alias: String, name: String, from: String, email_list: &Vec<String
             .build()
             .unwrap();
 
-        // Open a local connection on port 25
         let mut mailer = SmtpClient::new_unencrypted_localhost().unwrap().transport();
-        // Send the email
         let result = mailer.send(email.into());
 
         if result.is_ok() {
@@ -153,7 +151,6 @@ fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc
 
         let current_time = chrono::Utc::now().naive_local();
 
-        //println!("{}", value);
         //println!("{:?}", notify_interval);
         //if current_time.signed_duration_since(start_time) > notify_interval {
 
@@ -186,8 +183,6 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() == 3 {
         if &args[1] == "start" {
-
-
             let config_file = fs::read_to_string(&args[2]).expect("Unable to open config file.");
             let config_info: Config = toml::from_str(&config_file).expect("Unable to parse config file.");
 
