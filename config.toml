@@ -3,6 +3,7 @@ alias = "HMF"
 name = "Houston Main Floor"
 install_dir = "/localtmp/luser/HMF"
 properties_file = "production.container.log4j.properties"
+src_email = "root@hmf.lancium.com"
 email_notify = ["william.zhang@lancium.com"]
 notify_interval = 1
 flap_interval = 2

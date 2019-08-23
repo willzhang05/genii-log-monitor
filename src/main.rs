@@ -16,14 +16,16 @@ use chrono::{prelude::*};
 
 use lru::LruCache;
 
-//use lettre::email::EmailBuilder;
-//use lettre::transport::EmailTransport;
+use lettre::{SmtpClient, Transport};
+use lettre_email::{Email, mime::TEXT_PLAIN};
 
 #[derive(serde::Deserialize)]
 struct Container {
+    alias: String,
     name: String,
     install_dir: String,
     properties_file: String,
+    src_email: String,
     email_notify: Vec<String>,
     notify_interval: i64,
     flap_interval: i64,
@@ -115,8 +117,31 @@ fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, tx: &mpsc:
     }
 }
 
-fn send_email(error_info: ErrorInfo, email: String) {
-       
+//fn send_email(error_info: ErrorInfo, email: String) {
+fn send_email(alias: String, name: String, from: String, email_list: &Vec<String>) {
+    for rec in email_list {
+        let subject_text = format!("[{}]", alias);
+        let email = Email::builder()
+            .from((from.clone(), name.clone()))
+            .to(rec.clone())
+            .subject(subject_text)
+            .text("Hello world.")
+            .attachment_from_file(Path::new("config.toml"), None, &TEXT_PLAIN)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        // Open a local connection on port 25
+        let mut mailer = SmtpClient::new_unencrypted_localhost().unwrap().transport();
+        // Send the email
+        let result = mailer.send(email.into());
+
+        if result.is_ok() {
+            println!("Email sent");
+        } else {
+            println!("Could not send email: {:?}", result);
+        }
+    }
 }
 
 fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc::Receiver<String>, email_list: &Vec<String>, notify_interval: chrono::Duration, flap_interval: chrono::Duration) {
@@ -162,11 +187,13 @@ fn main() {
     if args.len() == 3 {
         if &args[1] == "start" {
 
+
             let config_file = fs::read_to_string(&args[2]).expect("Unable to open config file.");
             let config_info: Config = toml::from_str(&config_file).expect("Unable to parse config file.");
 
             for container in config_info.containers {
                 if container.enabled {
+                    send_email(container.alias.clone(), container.name.clone(), container.src_email.clone(), &container.email_notify);
                     println!("{:?} container monitoring enabled.", &container.name);
 
                     let prop_path = Path::new(&container.install_dir).join(&container.properties_file);
