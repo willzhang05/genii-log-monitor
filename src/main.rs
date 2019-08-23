@@ -4,6 +4,7 @@ extern crate toml;
 extern crate chrono;
 extern crate lru;
 extern crate lettre;
+extern crate lettre_email;
 
 use std::string::String;
 use std::path::{Path, PathBuf};
@@ -11,7 +12,7 @@ use std::{env, fs, thread};
 use std::io::{BufReader, SeekFrom, prelude::*};
 use std::sync::{mpsc, Arc, Mutex};
 
-use chrono::{Duration, prelude::*};
+use chrono::{prelude::*};
 
 use lru::LruCache;
 
@@ -25,6 +26,7 @@ struct Container {
     properties_file: String,
     email_notify: Vec<String>,
     notify_interval: i64,
+    flap_interval: i64,
     cache_size: usize,
     enabled: bool
 }
@@ -95,45 +97,61 @@ fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, tx: &mpsc:
 
                 let mut error_cache_lock = error_cache.lock().unwrap();
                 if error_cache_lock.contains(&error_msg) {
-                    let mut error_info = (&mut error_cache_lock).get_mut(&error_msg).unwrap();
+                    let error_info = (&mut error_cache_lock).get_mut(&error_msg).unwrap();
                     
-                    let current_time = Utc::now().naive_local();
+                    error_info.last_update = chrono::Utc::now().naive_local();
 
-                    let error_period = current_time.signed_duration_since(error_info.last_update).num_seconds();
-                    error_info.last_update = current_time;
-                    error_info.update_period = error_period;
-
-                    //(&mut error_cache_lock).put(error_msg, error_info);
-                    println!("[READER] {:?} {:?} Updated!", error_msg, (&mut error_cache_lock).get(&error_msg).unwrap());
+                    //println!("[READER] {:?} {:?} Updated!", error_msg, (&mut error_cache_lock).get(&error_msg).unwrap());
                 } else {
                     let error_info: ErrorInfo = ErrorInfo { last_update: error_date, update_period: 0, email_sent: false };
-                    println!("[READER] {:?} {:?} Inserted!", error_msg, error_info);
+                    //println!("[READER] {:?} {:?} Inserted!", error_msg, error_info);
                     (&mut error_cache_lock).put(error_msg, error_info);
                 }
 
-                println!("[READER]  {:?}", (&error_cache_lock).len());
+                //println!("[READER]  {:?}", (&error_cache_lock).len());
                 tx.send(contents.to_owned()).expect("Unable to send on channel.");
             }
         }
     }
 }
 
-fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc::Receiver<String>, email_list: &Vec<String>, notify_interval: chrono::Duration) {
+fn send_email(error_info: ErrorInfo, email: String) {
+       
+}
+
+fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc::Receiver<String>, email_list: &Vec<String>, notify_interval: chrono::Duration, flap_interval: chrono::Duration) {
+    let mut start_time = chrono::Utc::now().naive_local();
     loop {
         let value = rx.recv().expect("Unable to receive from channel.");
-        println!("{}", value);
-        let current_time = Utc::now().naive_local();
+        let interval = chrono::Duration::seconds(5);
+        let flap = chrono::Duration::seconds(10);
+
+        let current_time = chrono::Utc::now().naive_local();
+
+        //println!("{}", value);
         //println!("{:?}", notify_interval);
-        //println!("{:?}", current_time.signed_duration_since(start_time));
-        let mut error_cache_lock = error_cache.lock().unwrap();
-        println!("[NOTIFIER]  {:?}", (&error_cache_lock).len());
-        if error_cache_lock.contains(&value) {
-            let error_info = (&mut error_cache_lock).get(&value).unwrap();
-            let last_occurrence = error_info.last_update;
-            if current_time.signed_duration_since(last_occurrence) > notify_interval {
-                println!("[NOTIFIER] EMAIL SENT!");
+        //if current_time.signed_duration_since(start_time) > notify_interval {
+
+        if current_time.signed_duration_since(start_time) >= interval {
+            let mut error_cache_lock = error_cache.lock().unwrap();
+
+            println!("{:?}", current_time.signed_duration_since(start_time));
+
+            start_time = chrono::Utc::now().naive_local();
+
+            for (value, error_info) in error_cache_lock.iter_mut() {
+                //println!("[NOTIFIER]  {:?}", (&error_cache_lock).len());
+
+                let last_occurrence = error_info.last_update;
+                if current_time.signed_duration_since(last_occurrence) >= flap {
+                    println!("{:?}", error_info.email_sent);
+                    if !error_info.email_sent {
+                        error_info.email_sent = true;
+                        println!("[NOTIFIER] EMAIL SENT!");
+                    }
+                }
+                println!("[NOTIFIER] {:?} {:?}", value, last_occurrence);
             }
-            println!("[NOTIFIER] {:?} {:?}", value, last_occurrence);
         }
     }
 }
@@ -161,10 +179,11 @@ fn main() {
                         monitor_log(&error_cache, &tx, &log_path, max_log_size);
                     }});
 
-                    let notify_interval = Duration::minutes(container.notify_interval);
+                    let notify_interval = chrono::Duration::minutes(container.notify_interval);
+                    let flap_interval = chrono::Duration::minutes(container.flap_interval);
 
                     let notifier = thread::spawn({ let error_cache = error_cache.clone(); move || {
-                        notify_error(&error_cache, &rx, &container.email_notify, notify_interval);
+                        notify_error(&error_cache, &rx, &container.email_notify, notify_interval, flap_interval);
                     }});
 
                     reader.join().expect("The sender thread has panicked!");
