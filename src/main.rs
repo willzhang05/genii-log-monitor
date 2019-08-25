@@ -10,14 +10,16 @@ use std::string::String;
 use std::path::{Path, PathBuf};
 use std::{env, fs, thread};
 use std::io::{BufReader, SeekFrom, prelude::*};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
+//mpsc};
 
 use chrono::{prelude::*};
 
 use lru::LruCache;
 
 use lettre::{SmtpClient, Transport};
-use lettre_email::{Email, mime::TEXT_PLAIN};
+use lettre_email::{Email};
+//mime::TEXT_PLAIN};
 
 #[derive(serde::Deserialize)]
 struct Container {
@@ -70,7 +72,7 @@ fn read_log_properties(prop_path: &Path) -> (PathBuf, usize) {
     return (log_path, max_log_size);
 }
 
-fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, tx: &mpsc::Sender<String>, log_path: &Path, max_log_size: usize) {
+fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, log_path: &Path, max_log_size: usize) {
     let mut log_file = fs::File::open(log_path).expect("Unable to open log file.");
     log_file.seek(SeekFrom::End(0)).expect("Unable to seek to end of log file.");
     let mut log_reader = BufReader::new(log_file);
@@ -112,7 +114,6 @@ fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, tx: &mpsc:
                 }
 
                 //println!("[READER]  {:?}", (&error_cache_lock).len());
-                tx.send(contents.to_owned()).expect("Unable to send on channel.");
             }
         }
     }
@@ -142,16 +143,16 @@ fn send_email(error_msg: &String, last_update: chrono::NaiveDateTime, container:
     }
 }
 
-fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc::Receiver<String>, container: &Container) {
+fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, container: &Container) {
     let mut start_time = chrono::Utc::now().naive_local();
     loop {
         //let recv = rx.recv().expect("Unable to receive from channel.");
 
-        //let notify_interval = chrono::Duration::minutes(container.notify_interval);
-        //let flap_interval = container.flap_interval;
+        let notify_interval = chrono::Duration::minutes(container.notify_interval);
+        let flap_interval = container.flap_interval;
 
-        let notify_interval = chrono::Duration::seconds(5);
-        let flap_interval = 10;
+        //let notify_interval = chrono::Duration::seconds(5);
+        //let flap_interval = 10;
 
         let current_time = chrono::Utc::now().naive_local();
 
@@ -159,8 +160,6 @@ fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc
 
         if current_time.signed_duration_since(start_time) >= notify_interval {
             let mut error_cache_lock = error_cache.lock().unwrap();
-
-            println!("{:?}", current_time.signed_duration_since(start_time));
 
             start_time = chrono::Utc::now().naive_local();
 
@@ -198,18 +197,17 @@ fn main() {
                     let prop_path = Path::new(&container.install_dir).join(&container.properties_file);
                     let (log_path, max_log_size) = read_log_properties(&prop_path);
 
-                    let (tx, rx) = mpsc::channel();
                     let error_cache: Arc<Mutex<LruCache<String, ErrorInfo>>> = Arc::new(Mutex::new(LruCache::new(container.cache_size)));
 
                     let reader = thread::spawn({ let error_cache = error_cache.clone(); move || {
-                        monitor_log(&error_cache, &tx, &log_path, max_log_size);
+                        monitor_log(&error_cache, &log_path, max_log_size);
                     }});
 
                     //let notify_interval = chrono::Duration::minutes(container.notify_interval);
                     //let flap_interval = chrono::Duration::minutes(container.flap_interval);
 
                     let notifier = thread::spawn({ let error_cache = error_cache.clone(); move || {
-                        notify_error(&error_cache, &rx, &container);
+                        notify_error(&error_cache, &container);
                         //.email_notify, notify_interval, flap_interval);
                     }});
 
