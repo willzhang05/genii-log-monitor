@@ -26,7 +26,7 @@ struct Container {
     install_dir: String,
     properties_file: String,
     src_email: String,
-    email_notify: Vec<String>,
+    email_list: Vec<String>,
     notify_interval: i64,
     flap_interval: i64,
     cache_size: usize,
@@ -91,7 +91,7 @@ fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, tx: &mpsc:
         
         if contents.len() != 0 {
             let log_split: Vec<&str> = contents.split_whitespace().collect();
-            if log_split.len() > 3 && (log_split[2] == "DEBUG" || log_split[2] == "ERROR" || log_split[2] == "WARN") {
+            if log_split.len() > 3 && (log_split[2] == "ERROR" || log_split[2] == "WARN") {
                 let log_date = log_split[..2].join(" ");
 
                 let error_date = NaiveDateTime::parse_from_str(log_date.as_str(), "%Y-%m-%d %H:%M:%S%.3f").expect("Invalid date format in log.");
@@ -100,8 +100,9 @@ fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, tx: &mpsc:
                 let mut error_cache_lock = error_cache.lock().unwrap();
                 if error_cache_lock.contains(&error_msg) {
                     let error_info = (&mut error_cache_lock).get_mut(&error_msg).unwrap();
-                    
-                    error_info.last_update = chrono::Utc::now().naive_local();
+                    let current_time = chrono::Utc::now().naive_local();
+                    error_info.update_period = current_time.signed_duration_since(error_info.last_update).num_seconds();
+                    error_info.last_update = current_time;
 
                     //println!("[READER] {:?} {:?} Updated!", error_msg, (&mut error_cache_lock).get(&error_msg).unwrap());
                 } else {
@@ -117,17 +118,16 @@ fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, tx: &mpsc:
     }
 }
 
-//fn send_email(error_info: ErrorInfo, email: String) {
-fn send_email(alias: String, name: String, from: String, email_list: &Vec<String>) {
-    for rec in email_list {
-        let subject_text = format!("[{}]", alias);
+fn send_email(error_msg: &String, last_update: chrono::NaiveDateTime, container: &Container) {
+    for rec in &container.email_list {
+        let subject_text = format!("[{}] ERROR: {}", container.alias, error_msg);
         let email = Email::builder()
-            .from((from.clone(), name.clone()))
+            .from((container.src_email.clone(), container.name.clone()))
             .to(rec.clone())
             .subject(subject_text)
-            .text("Hello world.")
-            .attachment_from_file(Path::new("config.toml"), None, &TEXT_PLAIN)
-            .unwrap()
+            .text(last_update.format("%Y-%m-%d %H:%M:%S").to_string())
+            //.attachment_from_file(Path::new("config.toml"), None, &TEXT_PLAIN)
+            //.unwrap()
             .build()
             .unwrap();
 
@@ -145,13 +145,13 @@ fn send_email(alias: String, name: String, from: String, email_list: &Vec<String
 fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc::Receiver<String>, container: &Container) {
     let mut start_time = chrono::Utc::now().naive_local();
     loop {
-        let recv = rx.recv().expect("Unable to receive from channel.");
+        //let recv = rx.recv().expect("Unable to receive from channel.");
 
-        let notify_interval = chrono::Duration::minutes(container.notify_interval);
-        let flap_interval = chrono::Duration::minutes(container.flap_interval);
+        //let notify_interval = chrono::Duration::minutes(container.notify_interval);
+        //let flap_interval = container.flap_interval;
 
-        //let interval = chrono::Duration::seconds(5);
-        //let flap = chrono::Duration::seconds(10);
+        let notify_interval = chrono::Duration::seconds(5);
+        let flap_interval = 10;
 
         let current_time = chrono::Utc::now().naive_local();
 
@@ -164,18 +164,20 @@ fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc
 
             start_time = chrono::Utc::now().naive_local();
 
-            for (value, error_info) in error_cache_lock.iter_mut() {
+            for (error_msg, error_info) in error_cache_lock.iter_mut() {
                 //println!("[NOTIFIER]  {:?}", (&error_cache_lock).len());
 
                 let last_occurrence = error_info.last_update;
-                if current_time.signed_duration_since(last_occurrence) >= flap_interval {
-                    println!("{:?}", error_info.email_sent);
-                    if !error_info.email_sent {
+                if error_info.update_period >= flap_interval {
+                    if error_info.email_sent {
+                        error_info.email_sent = false;
+                    } else {
                         error_info.email_sent = true;
                         println!("[NOTIFIER] EMAIL SENT!");
+                        send_email(error_msg, error_info.last_update, &container);
                     }
                 }
-                println!("[NOTIFIER] {:?} {:?}", value, last_occurrence);
+                println!("[NOTIFIER] {:?} {:?}", error_msg, last_occurrence);
             }
         }
     }
@@ -191,7 +193,6 @@ fn main() {
 
             for container in config_info.containers {
                 if container.enabled {
-                    send_email(container.alias.clone(), container.name.clone(), container.src_email.clone(), &container.email_notify);
                     println!("{:?} container monitoring enabled.", &container.name);
 
                     let prop_path = Path::new(&container.install_dir).join(&container.properties_file);
