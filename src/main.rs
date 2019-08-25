@@ -142,19 +142,22 @@ fn send_email(alias: String, name: String, from: String, email_list: &Vec<String
     }
 }
 
-fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc::Receiver<String>, email_list: &Vec<String>, notify_interval: chrono::Duration, flap_interval: chrono::Duration) {
+fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc::Receiver<String>, container: &Container) {
     let mut start_time = chrono::Utc::now().naive_local();
     loop {
-        let value = rx.recv().expect("Unable to receive from channel.");
-        let interval = chrono::Duration::seconds(5);
-        let flap = chrono::Duration::seconds(10);
+        let recv = rx.recv().expect("Unable to receive from channel.");
+
+        let notify_interval = chrono::Duration::minutes(container.notify_interval);
+        let flap_interval = chrono::Duration::minutes(container.flap_interval);
+
+        //let interval = chrono::Duration::seconds(5);
+        //let flap = chrono::Duration::seconds(10);
 
         let current_time = chrono::Utc::now().naive_local();
 
         //println!("{:?}", notify_interval);
-        //if current_time.signed_duration_since(start_time) > notify_interval {
 
-        if current_time.signed_duration_since(start_time) >= interval {
+        if current_time.signed_duration_since(start_time) >= notify_interval {
             let mut error_cache_lock = error_cache.lock().unwrap();
 
             println!("{:?}", current_time.signed_duration_since(start_time));
@@ -165,7 +168,7 @@ fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, rx: &mpsc
                 //println!("[NOTIFIER]  {:?}", (&error_cache_lock).len());
 
                 let last_occurrence = error_info.last_update;
-                if current_time.signed_duration_since(last_occurrence) >= flap {
+                if current_time.signed_duration_since(last_occurrence) >= flap_interval {
                     println!("{:?}", error_info.email_sent);
                     if !error_info.email_sent {
                         error_info.email_sent = true;
@@ -201,11 +204,12 @@ fn main() {
                         monitor_log(&error_cache, &tx, &log_path, max_log_size);
                     }});
 
-                    let notify_interval = chrono::Duration::minutes(container.notify_interval);
-                    let flap_interval = chrono::Duration::minutes(container.flap_interval);
+                    //let notify_interval = chrono::Duration::minutes(container.notify_interval);
+                    //let flap_interval = chrono::Duration::minutes(container.flap_interval);
 
                     let notifier = thread::spawn({ let error_cache = error_cache.clone(); move || {
-                        notify_error(&error_cache, &rx, &container.email_notify, notify_interval, flap_interval);
+                        notify_error(&error_cache, &rx, &container);
+                        //.email_notify, notify_interval, flap_interval);
                     }});
 
                     reader.join().expect("The sender thread has panicked!");
