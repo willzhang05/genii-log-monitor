@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use std::{env, fs, thread};
 use std::io::{BufReader, SeekFrom, prelude::*};
 use std::sync::{Arc, Mutex};
-//mpsc};
 
 use chrono::{prelude::*};
 
@@ -112,8 +111,6 @@ fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, log_path: 
                     //println!("[READER] {:?} {:?} Inserted!", error_msg, error_info);
                     (&mut error_cache_lock).put(error_msg, error_info);
                 }
-
-                //println!("[READER]  {:?}", (&error_cache_lock).len());
             }
         }
     }
@@ -146,8 +143,6 @@ fn send_email(error_msg: &String, last_update: chrono::NaiveDateTime, container:
 fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, container: &Container) {
     let mut start_time = chrono::Utc::now().naive_local();
     loop {
-        //let recv = rx.recv().expect("Unable to receive from channel.");
-
         let notify_interval = chrono::Duration::minutes(container.notify_interval);
         let flap_interval = container.flap_interval;
 
@@ -156,16 +151,12 @@ fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, container
 
         let current_time = chrono::Utc::now().naive_local();
 
-        //println!("{:?}", notify_interval);
-
         if current_time.signed_duration_since(start_time) >= notify_interval {
             let mut error_cache_lock = error_cache.lock().unwrap();
 
             start_time = chrono::Utc::now().naive_local();
 
             for (error_msg, error_info) in error_cache_lock.iter_mut() {
-                //println!("[NOTIFIER]  {:?}", (&error_cache_lock).len());
-
                 let last_occurrence = error_info.last_update;
                 if error_info.update_period >= flap_interval {
                     if error_info.email_sent {
