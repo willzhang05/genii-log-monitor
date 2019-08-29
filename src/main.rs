@@ -18,7 +18,6 @@ use lru::LruCache;
 
 use lettre::{SmtpClient, Transport};
 use lettre_email::{Email};
-//mime::TEXT_PLAIN};
 
 #[derive(serde::Deserialize)]
 struct Container {
@@ -92,7 +91,7 @@ fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, log_path: 
         
         if contents.len() != 0 {
             let log_split: Vec<&str> = contents.split_whitespace().collect();
-            if log_split.len() > 3 && (log_split[2] == "ERROR" || log_split[2] == "WARN") {
+            if log_split.len() > 3 && (log_split[2] == "ERROR")  {
                 let log_date = log_split[..2].join(" ");
 
                 let error_date = NaiveDateTime::parse_from_str(log_date.as_str(), "%Y-%m-%d %H:%M:%S%.3f").expect("Invalid date format in log.");
@@ -105,10 +104,8 @@ fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, log_path: 
                     error_info.update_period = current_time.signed_duration_since(error_info.last_update).num_seconds();
                     error_info.last_update = current_time;
 
-                    //println!("[READER] {:?} {:?} Updated!", error_msg, (&mut error_cache_lock).get(&error_msg).unwrap());
                 } else {
                     let error_info: ErrorInfo = ErrorInfo { last_update: error_date, update_period: 0, email_sent: false };
-                    //println!("[READER] {:?} {:?} Inserted!", error_msg, error_info);
                     (&mut error_cache_lock).put(error_msg, error_info);
                 }
             }
@@ -145,9 +142,6 @@ fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, container
     loop {
         let notify_interval = chrono::Duration::minutes(container.notify_interval);
         let flap_interval = container.flap_interval;
-
-        //let notify_interval = chrono::Duration::seconds(5);
-        //let flap_interval = 10;
 
         let current_time = chrono::Utc::now().naive_local();
 
