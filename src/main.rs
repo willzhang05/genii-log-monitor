@@ -41,7 +41,7 @@ struct Config {
 #[derive(Copy, Clone, Debug)]
 struct ErrorInfo {
     last_update: chrono::NaiveDateTime,
-    update_period: i64,
+    update_period: chrono::Duration,
     email_sent: bool
 }
 
@@ -101,11 +101,10 @@ fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, log_path: 
                 if error_cache_lock.contains(&error_msg) {
                     let error_info = (&mut error_cache_lock).get_mut(&error_msg).unwrap();
                     let current_time = chrono::Utc::now().naive_local();
-                    error_info.update_period = current_time.signed_duration_since(error_info.last_update).num_seconds();
+                    error_info.update_period = current_time.signed_duration_since(error_info.last_update);
                     error_info.last_update = current_time;
-
                 } else {
-                    let error_info: ErrorInfo = ErrorInfo { last_update: error_date, update_period: 0, email_sent: false };
+                    let error_info: ErrorInfo = ErrorInfo { last_update: error_date, update_period: chrono::Duration::minutes(0), email_sent: false };
                     (&mut error_cache_lock).put(error_msg, error_info);
                 }
             }
@@ -141,13 +140,12 @@ fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, container
     let mut start_time = chrono::Utc::now().naive_local();
     loop {
         let notify_interval = chrono::Duration::minutes(container.notify_interval);
-        let flap_interval = container.flap_interval;
+        let flap_interval = chrono::Duration::minutes(container.flap_interval);
 
         let current_time = chrono::Utc::now().naive_local();
 
         if current_time.signed_duration_since(start_time) >= notify_interval {
             let mut error_cache_lock = error_cache.lock().unwrap();
-
             start_time = chrono::Utc::now().naive_local();
 
             for (error_msg, error_info) in error_cache_lock.iter_mut() {
@@ -157,7 +155,6 @@ fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, container
                         error_info.email_sent = false;
                     } else {
                         error_info.email_sent = true;
-                        println!("[NOTIFIER] EMAIL SENT!");
                         send_email(error_msg, error_info.last_update, &container);
                     }
                 }
