@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::{env, fs, thread};
 use std::io::{BufReader, SeekFrom, prelude::*};
 use std::sync::{Arc, Mutex};
+use inotify::{Inotify, EventMask, WatchMask};
 
 use chrono::{prelude::*};
 
@@ -75,15 +76,27 @@ fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, log_path: 
     log_file.seek(SeekFrom::End(0)).expect("Unable to seek to end of log file.");
     let mut log_reader = BufReader::new(log_file);
     let mut contents =  String::new();
+    let mut inotify = Inotify::init().expect("Error while initializing inotify instance.");
+    inotify.add_watch(log_path, WatchMask::MODIFY | WatchMask::CLOSE).expect("Error while adding file watch.");
+    let mut buffer = [0; 4096];
 
     println!("Ready and monitoring {}.", log_path.to_str().unwrap());
 
     loop {
+        let events = inotify.read_events_blocking(&mut buffer).expect("Error while reading events.");
+        
+        let mut close_flag = false;
+        for event in events {
+            if event.mask.contains(EventMask::CLOSE_WRITE) {
+                close_flag = true;
+            }
+        }
+
         log_reader.get_mut().sync_all().expect("Unable to sync log file.");
         let metadata = log_reader.get_ref().metadata().expect("Unable to fetch log file metadata.");
         let log_size: f32 = metadata.len() as f32 / 1e6 as f32;
         // Untested, meant to handle log rollover when maximum log size is reached.
-        if log_size >= max_log_size as f32 {
+        if close_flag && log_size >= max_log_size as f32 {
             log_reader.get_mut().seek(SeekFrom::Start(0)).expect("Unable to seek to start of log file.");
         }
         contents.clear();

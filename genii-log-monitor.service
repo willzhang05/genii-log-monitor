@@ -1,0 +1,16 @@
+[Unit]
+Description=GenesisII Log Monitoring server
+Requires=network.target
+
+[Service]
+Type=simple
+User=root
+Environment="GENII_USER_DIR=/localtmp/luser/HMF/.GenesisII"
+Environment="GENII_INSTALL_DIR=/localtmp/luser/HMF/GenesisII"
+WorkingDirectory=/home/williamzhang/genii-log-monitor
+ExecStart="/home/williamzhang/genii-log-monitor/target/release/genii-log-monitor start config.toml"
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target
+Alias=genii-log-monitor.service

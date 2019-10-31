@@ -5,6 +5,7 @@ install_dir = "/localtmp/luser/HMF"
 properties_file = "production.container.log4j.properties"
 src_email = "root@hmf.lancium.com"
 email_list = ["william.zhang@lancium.com", "andrew.grimshaw@lancium.com", "charlie.houghton@lancium.com"]
+poll_interval = 5
 notify_interval = 5
 flap_interval = 30
 cache_size = 50
