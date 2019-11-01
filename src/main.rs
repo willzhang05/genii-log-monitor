@@ -106,30 +106,33 @@ fn send_email(error_msg: &String, last_update: chrono::NaiveDateTime, container:
 }
 
 fn notify_error(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, container: &Container) {
-    let mut start_time = chrono::Utc::now().naive_local();
+    //let mut start_time = chrono::Utc::now().naive_local();
     loop {
         let notify_interval = chrono::Duration::minutes(container.notify_interval);
         let flap_interval = chrono::Duration::minutes(container.flap_interval);
 
-        let current_time = chrono::Utc::now().naive_local();
+        //let current_time = chrono::Utc::now().naive_local();
+        let delay = notify_interval.to_std().unwrap();
 
-        if current_time.signed_duration_since(start_time) >= notify_interval {
-            let mut error_cache_lock = error_cache.lock().unwrap();
-            start_time = chrono::Utc::now().naive_local();
+        //if current_time.signed_duration_since(start_time) >= notify_interval {
+        thread::sleep(delay);
 
-            for (error_msg, error_info) in error_cache_lock.iter_mut() {
-                let last_occurrence = error_info.last_update;
-                if error_info.update_period >= flap_interval {
-                    if error_info.email_sent {
-                        error_info.email_sent = false;
-                    } else {
-                        error_info.email_sent = true;
-                        send_email(error_msg, error_info.last_update, &container);
-                    }
+        let mut error_cache_lock = error_cache.lock().unwrap();
+        //start_time = chrono::Utc::now().naive_local();
+
+        for (error_msg, error_info) in error_cache_lock.iter_mut() {
+            let last_occurrence = error_info.last_update;
+            if error_info.update_period >= flap_interval {
+                if error_info.email_sent {
+                    error_info.email_sent = false;
+                } else {
+                    error_info.email_sent = true;
+                    send_email(error_msg, error_info.last_update, &container);
                 }
-                println!("[NOTIFIER] {:?} {:?}", error_msg, last_occurrence);
             }
+            println!("[NOTIFIER] {:?} {:?}", error_msg, last_occurrence);
         }
+        //}
     }
 }
 
