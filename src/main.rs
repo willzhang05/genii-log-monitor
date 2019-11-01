@@ -7,7 +7,7 @@ extern crate lettre;
 extern crate lettre_email;
 
 use std::string::String;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::{env, fs, thread};
 use std::io::{BufReader, SeekFrom, prelude::*};
 use std::sync::{Arc, Mutex};
@@ -20,56 +20,12 @@ use lru::LruCache;
 use lettre::{SmtpClient, Transport};
 use lettre_email::{Email};
 
-#[derive(serde::Deserialize)]
-struct Container {
-    alias: String,
-    name: String,
-    install_dir: String,
-    properties_file: String,
-    src_email: String,
-    email_list: Vec<String>,
-    notify_interval: i64,
-    flap_interval: i64,
-    cache_size: usize,
-    enabled: bool
-}
+mod config;
+use crate::config::Container;
+use crate::config::ErrorInfo;
+use crate::config::Config;
+use crate::config::read_log_properties;
 
-#[derive(serde::Deserialize)]
-struct Config {
-    containers: Vec<Container>
-}
-
-#[derive(Copy, Clone, Debug)]
-struct ErrorInfo {
-    last_update: chrono::NaiveDateTime,
-    update_period: chrono::Duration,
-    email_sent: bool
-}
-
-fn read_log_properties(prop_path: &Path) -> (PathBuf, usize) {
-    let prop_file = fs::File::open(prop_path).expect("Unable to open properties file.");
-    let prop_reader = BufReader::new(prop_file);
-    let mut log_path = PathBuf::new();
-    let mut max_log_size: usize = 0;
-
-    for line in prop_reader.lines() {
-        let line_str = line.unwrap();
-        if line_str.starts_with('#') {
-            continue;
-        }
-        if line_str.contains("log4j.appender.LOGFILE.File") {
-            let split_line: Vec<&str> = line_str.split("=").to_owned().collect();
-            log_path = Path::new(split_line[1].clone()).to_path_buf();
-        }
-        if line_str.contains("log4j.appender.LOGFILE.MaxFileSize") {
-            let split_line: Vec<&str> = line_str.split("=").to_owned().collect();
-            let mut max_log_size_string = split_line[1].to_string().clone();
-            max_log_size_string.truncate(max_log_size_string.len() - 2);
-            max_log_size = max_log_size_string.parse::<usize>().expect("Unable to parse max log size");
-        }
-    }
-    return (log_path, max_log_size);
-}
 
 fn monitor_log(error_cache: &Arc<Mutex<LruCache<String, ErrorInfo>>>, log_path: &Path, max_log_size: usize) {
     let mut log_file = fs::File::open(log_path).expect("Unable to open log file.");
